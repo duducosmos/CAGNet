@@ -14,10 +14,10 @@ import os
 import threading
 import warnings
 import multiprocessing.pool
-from keras_preprocessing import get_keras_submodule
+from tensorflow.keras.utils import load_img, img_to_array, Sequence
 
 try:
-    IteratorType = get_keras_submodule('utils').Sequence
+    IteratorType = Sequence
 except ImportError:
     IteratorType = object
 

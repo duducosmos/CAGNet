@@ -7,6 +7,10 @@ from data_generator import ImageDataGenerator
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.callbacks import CSVLogger, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
+from tensorflow.keras import backend as K
+import tensorflow as tf
+from customcallback import PlotTestImages
+
 
 
 def args():
@@ -36,12 +40,47 @@ def image_preprocess(image):
 
 def mask_preprocess(mask):
     label = mask / 255
-    label = (label >= 0.5).astype(np.bool)
+    label = (label >= 0.5).astype(bool)
     label = to_categorical(label, num_classes=2)
     return label
 
 
+def f1(y_true, y_pred):
+    def recall(y_true, y_pred):
+        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+        recall = true_positives / (possible_positives + K.epsilon())
+        return recall
+
+    def precision(y_true, y_pred):
+        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+        precision = true_positives / (predicted_positives + K.epsilon())
+        return precision
+
+    y_pred = K.round(y_pred)
+    precision = precision(y_true, y_pred)
+    recall = recall(y_true, y_pred)
+    return 2*((precision*recall)/(precision+recall+K.epsilon()))
+
 if __name__ == "__main__":
+
+    tf.get_logger().setLevel('ERROR')
+
+
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        # try:
+        # Currently, memory growth needs to be the same across GPUs
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+            tf.config.experimental.set_virtual_device_configuration(
+                gpu, [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=10*1024)])
+        logical_gpus = tf.config.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        # except RuntimeError as e:
+        #     # Memory growth must be set before GPUs have been initialized
+        #     print(e)
 
     cfg = args()
     image_datagen_train = ImageDataGenerator(rotation_range=12, horizontal_flip=True,
@@ -61,8 +100,12 @@ if __name__ == "__main__":
     if cfg.backbone_weights == 'scratch':
         cfg.backbone_weights = None
 
-    model = cagnet_model(cfg.backbone_model, cfg.input_shape, backbone_weights=cfg.backbone_weights, load_model_dir=cfg.load_model)
-    model.compile(optimizer=SGD(lr=cfg.learning_rate, momentum=0.9), loss=custom_loss, metrics=["accuracy"])
+    strategy = tf.distribute.MirroredStrategy()
+
+    # Compile the model
+    with strategy.scope():
+        model = cagnet_model(cfg.backbone_model, cfg.input_shape, backbone_weights=cfg.backbone_weights, load_model_dir=cfg.load_model)
+        model.compile(optimizer=SGD(lr=cfg.learning_rate, momentum=0.9), loss=custom_loss, metrics=["accuracy", f1])
 
     if not os.path.isdir(cfg.save_dir):
         os.mkdir(cfg.save_dir)
@@ -73,7 +116,20 @@ if __name__ == "__main__":
     check_point = ModelCheckpoint(filepath=os.path.join(cfg.save_dir, 'cagnet_{epoch:03d}_{loss:.4f}.hdf5'),
                                   monitor='loss', verbose=1, save_best_only=True, mode='min')
     tensorboard = TensorBoard(os.path.join(cfg.save_dir, 'tensorboard'))
-    callbacks = [logger, reduce_lr, check_point, tensorboard]
 
-    model.fit_generator(train_generator, steps_per_epoch=steps_per_epoch, epochs=cfg.epochs,
+
+
+    x_plot_test = os.path.join(
+        cfg.train_dir, "images/image/0a6a71bd-ddeb-43a6-b9f2-977a5b35ad17.jpg")
+    y_plot_test = os.path.join(
+        cfg.train_dir, "masks/mask/0a6a71bd-ddeb-43a6-b9f2-977a5b35ad17.png")
+    
+    plottestimage = PlotTestImages(
+            x_plot_test, y_plot_test, (480, 480), cfg.backbone_model, cfg.save_dir)
+
+
+
+    callbacks = [logger, reduce_lr, check_point, tensorboard, plottestimage]
+
+    model.fit(train_generator, steps_per_epoch=steps_per_epoch, epochs=cfg.epochs,
                         use_multiprocessing=cfg.use_multiprocessing, verbose=1, callbacks=callbacks, shuffle=True)
