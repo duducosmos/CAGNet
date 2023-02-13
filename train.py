@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 import numpy as np
 from loss import custom_loss
@@ -105,7 +106,7 @@ if __name__ == "__main__":
     # Compile the model
     with strategy.scope():
         model = cagnet_model(cfg.backbone_model, cfg.input_shape, backbone_weights=cfg.backbone_weights, load_model_dir=cfg.load_model)
-        model.compile(optimizer=SGD(lr=cfg.learning_rate, momentum=0.9), loss=custom_loss, metrics=["accuracy", f1])
+        model.compile(optimizer=SGD(learning_rate=cfg.learning_rate, momentum=0.9), loss=custom_loss, metrics=["accuracy", f1])
 
     if not os.path.isdir(cfg.save_dir):
         os.mkdir(cfg.save_dir)
@@ -115,6 +116,8 @@ if __name__ == "__main__":
     reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=10, verbose=1, mode='min', min_delta=0.0001)
     check_point = ModelCheckpoint(filepath=os.path.join(cfg.save_dir, 'cagnet_{epoch:03d}_{loss:.4f}.hdf5'),
                                   monitor='loss', verbose=1, save_best_only=True, mode='min')
+    
+
     tensorboard = TensorBoard(os.path.join(cfg.save_dir, 'tensorboard'))
 
 
@@ -125,9 +128,11 @@ if __name__ == "__main__":
         cfg.train_dir, "masks/mask/0a6a71bd-ddeb-43a6-b9f2-977a5b35ad17.png")
     
     plottestimage = PlotTestImages(
-            x_plot_test, y_plot_test, (480, 480), cfg.backbone_model, cfg.save_dir)
+            x_plot_test, y_plot_test, (480, 480), cfg.backbone_model, cfg.save_dir)    
 
-
+    # plottestimage.model = model 
+    # plottestimage.on_epoch_end(0)
+    # sys.exit()
 
     callbacks = [logger, reduce_lr, check_point, tensorboard, plottestimage]
 
