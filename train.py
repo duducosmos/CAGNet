@@ -2,7 +2,7 @@ import os
 import sys
 import argparse
 import numpy as np
-from loss import custom_loss
+from loss import custom_loss, f1
 from model import cagnet_model
 from data_generator import ImageDataGenerator
 from tensorflow.keras.utils import to_categorical
@@ -45,24 +45,6 @@ def mask_preprocess(mask):
     label = to_categorical(label, num_classes=2)
     return label
 
-
-def f1(y_true, y_pred):
-    def recall(y_true, y_pred):
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-        recall = true_positives / (possible_positives + K.epsilon())
-        return recall
-
-    def precision(y_true, y_pred):
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-        precision = true_positives / (predicted_positives + K.epsilon())
-        return precision
-
-    y_pred = K.round(y_pred)
-    precision = precision(y_true, y_pred)
-    recall = recall(y_true, y_pred)
-    return 2*((precision*recall)/(precision+recall+K.epsilon()))
 
 if __name__ == "__main__":
 
