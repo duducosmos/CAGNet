@@ -13,12 +13,13 @@ import tensorflow as tf
 from customcallback import PlotTestImages
 
 
-
 def args():
-    parser = argparse.ArgumentParser(description="Source code for training CAGNet models")
+    parser = argparse.ArgumentParser(
+        description="Source code for training CAGNet models")
     parser.add_argument("--backbone_model", type=str, default='VGG16', choices=['VGG16', 'ResNet50', 'NASNetMobile',
                                                                                 'NASNetLarge'])
-    parser.add_argument("--backbone_weights", type=str, default='imagenet', choices=['imagenet', 'scratch'])
+    parser.add_argument("--backbone_weights", type=str,
+                        default='imagenet', choices=['imagenet', 'scratch'])
     parser.add_argument("--input_shape", type=tuple, default=(480, 480, 3))
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--learning_rate", type=float, default=8e-3)
@@ -47,6 +48,7 @@ def mask_preprocess(mask):
     label = to_categorical(label, num_classes=2)
     return label
 
+
 def get_data_generator(data_dir, target_size, batch_size):
     image_datagen_train = ImageDataGenerator(rotation_range=12, horizontal_flip=True,
                                              preprocessing_function=image_preprocess)
@@ -63,10 +65,10 @@ def get_data_generator(data_dir, target_size, batch_size):
     steps_per_epoch = len(image_generator_train)
     return train_generator, steps_per_epoch
 
+
 if __name__ == "__main__":
 
     tf.get_logger().setLevel('ERROR')
-
 
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
@@ -84,13 +86,12 @@ if __name__ == "__main__":
 
     cfg = args()
 
-
-    train_generator, steps_per_epoch = get_data_generator(cfg.train_dir, cfg.input_shape[:-1], cfg.batch_size)
-
+    train_generator, steps_per_epoch = get_data_generator(
+        cfg.train_dir, cfg.input_shape[:-1], cfg.batch_size)
 
     if cfg.validation_dir is not None:
-        validation_generator, validation_steps_per_epoch = get_data_generator(cfg.validation_dir, cfg.input_shape[:-1], cfg.batch_size)   
-
+        validation_generator, validation_steps_per_epoch = get_data_generator(
+            cfg.validation_dir, cfg.input_shape[:-1], cfg.batch_size)
 
     # valid_loader = zip(image_generator_train, mask_generator_train)
 
@@ -101,9 +102,10 @@ if __name__ == "__main__":
 
     # Compile the model
     with strategy.scope():
-        model = cagnet_model(cfg.backbone_model, cfg.input_shape, backbone_weights=cfg.backbone_weights, load_model_dir=cfg.load_model)
-        model.compile(optimizer=SGD(learning_rate=cfg.learning_rate, momentum=0.9), loss=custom_loss, metrics=["accuracy", f1])
-
+        model = cagnet_model(cfg.backbone_model, cfg.input_shape,
+                             backbone_weights=cfg.backbone_weights, load_model_dir=cfg.load_model)
+        model.compile(optimizer=SGD(learning_rate=cfg.learning_rate,
+                      momentum=0.9), loss=custom_loss, metrics=["accuracy", f1])
 
     if cfg.local_weights is not None and os.path.exists(cfg.local_weights):
         model.load_weights(cfg.local_weights)
@@ -114,39 +116,36 @@ if __name__ == "__main__":
 
     logger = CSVLogger(os.path.join(cfg.save_dir, 'log.txt'), append=True)
     # If the training loss does not decrease for 10 epochs, the learning rate is divided by 10.
-    reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=10, verbose=1, mode='min', min_delta=0.0001)
+    reduce_lr = ReduceLROnPlateau(
+        monitor='loss', factor=0.1, patience=10, verbose=1, mode='min', min_delta=0.0001)
     check_point = ModelCheckpoint(filepath=os.path.join(cfg.save_dir, 'cagnet_{epoch:03d}_{loss:.4f}.hdf5'),
                                   monitor='loss', verbose=1, save_best_only=True, mode='min')
-    
 
     tensorboard = TensorBoard(os.path.join(cfg.save_dir, 'tensorboard'))
 
-
-
     x_plot_test = os.path.join(
-        cfg.train_dir, "images/image/0a6a71bd-ddeb-43a6-b9f2-977a5b35ad17.jpg")
+        cfg.train_dir, "images/image/0a655354-f227-4a91-90b0-142036197d3d.jpg")
     y_plot_test = os.path.join(
-        cfg.train_dir, "masks/mask/0a6a71bd-ddeb-43a6-b9f2-977a5b35ad17.png")
-    
-    plottestimage = PlotTestImages(
-            x_plot_test, y_plot_test, (480, 480), cfg.backbone_model, cfg.save_dir)    
+        cfg.train_dir, "masks/mask/0a655354-f227-4a91-90b0-142036197d3d.png")
 
-    # plottestimage.model = model 
+    plottestimage = PlotTestImages(
+        x_plot_test, y_plot_test, (480, 480), cfg.backbone_model, cfg.save_dir)
+
+    # plottestimage.model = model
     # plottestimage.on_epoch_end(0)
     # sys.exit()
 
     callbacks = [logger, reduce_lr, check_point, tensorboard, plottestimage]
 
-
     if cfg.validation_dir is not None:
         model.fit(train_generator,
-                  steps_per_epoch=steps_per_epoch, 
+                  steps_per_epoch=steps_per_epoch,
                   epochs=cfg.epochs,
                   validation_data=validation_generator,
-                  use_multiprocessing=cfg.use_multiprocessing, 
+                  use_multiprocessing=cfg.use_multiprocessing,
                   verbose=1,
-                  callbacks=callbacks, 
+                  callbacks=callbacks,
                   shuffle=True)
     else:
         model.fit(train_generator, steps_per_epoch=steps_per_epoch, epochs=cfg.epochs,
-                        use_multiprocessing=cfg.use_multiprocessing, verbose=1, callbacks=callbacks, shuffle=True)
+                  use_multiprocessing=cfg.use_multiprocessing, verbose=1, callbacks=callbacks, shuffle=True)
