@@ -24,8 +24,10 @@ def args():
     parser.add_argument("--learning_rate", type=float, default=8e-3)
     parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--train_dir", type=str, default='./data/')
+    parser.add_argument("--validation_dir", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default='./save/')
     parser.add_argument("--use_multiprocessing", type=bool, default=True)
+    parser.add_argument("--local_weights", type=str, default=None)
     parser.add_argument("--load_model", type=str, default=None, help='If specified, before training, the model '
                                                                      'weights will be loaded from this path otherwise '
                                                                      ' the model will be trained from scratch.')
@@ -45,6 +47,21 @@ def mask_preprocess(mask):
     label = to_categorical(label, num_classes=2)
     return label
 
+def get_data_generator(data_dir, target_size, batch_size):
+    image_datagen_train = ImageDataGenerator(rotation_range=12, horizontal_flip=True,
+                                             preprocessing_function=image_preprocess)
+    mask_datagen_train = ImageDataGenerator(n_categorical=2, rotation_range=12, horizontal_flip=True,
+                                            preprocessing_function=mask_preprocess)
+    image_generator_train = image_datagen_train.flow_from_directory(os.path.join(data_dir, 'images'),
+                                                                    target_size=target_size, color_mode='rgb',
+                                                                    class_mode=None, seed=1, batch_size=batch_size)
+    mask_generator_train = mask_datagen_train.flow_from_directory(os.path.join(cfg.train_dir, 'masks'),
+                                                                  target_size=target_size, color_mode="grayscale",
+                                                                  class_mode=None, seed=1, batch_size=batch_size)
+
+    train_generator = zip(image_generator_train, mask_generator_train)
+    steps_per_epoch = len(image_generator_train)
+    return train_generator, steps_per_epoch
 
 if __name__ == "__main__":
 
@@ -66,19 +83,16 @@ if __name__ == "__main__":
         #     print(e)
 
     cfg = args()
-    image_datagen_train = ImageDataGenerator(rotation_range=12, horizontal_flip=True,
-                                             preprocessing_function=image_preprocess)
-    mask_datagen_train = ImageDataGenerator(n_categorical=2, rotation_range=12, horizontal_flip=True,
-                                            preprocessing_function=mask_preprocess)
-    image_generator_train = image_datagen_train.flow_from_directory(os.path.join(cfg.train_dir, 'images'),
-                                                                    target_size=cfg.input_shape[:-1], color_mode='rgb',
-                                                                    class_mode=None, seed=1, batch_size=cfg.batch_size)
-    mask_generator_train = mask_datagen_train.flow_from_directory(os.path.join(cfg.train_dir, 'masks'),
-                                                                  target_size=cfg.input_shape[:-1], color_mode="grayscale",
-                                                                  class_mode=None, seed=1, batch_size=cfg.batch_size)
 
-    train_generator = zip(image_generator_train, mask_generator_train)
-    steps_per_epoch = len(image_generator_train)
+
+    train_generator, steps_per_epoch = get_data_generator(cfg.train_dir, cfg.input_shape[:-1], cfg.batch_size)
+
+
+    if cfg.validation_dir is not None:
+        validation_generator, validation_steps_per_epoch = get_data_generator(cfg.validation_dir, cfg.input_shape[:-1], cfg.batch_size)   
+
+
+    # valid_loader = zip(image_generator_train, mask_generator_train)
 
     if cfg.backbone_weights == 'scratch':
         cfg.backbone_weights = None
@@ -89,6 +103,11 @@ if __name__ == "__main__":
     with strategy.scope():
         model = cagnet_model(cfg.backbone_model, cfg.input_shape, backbone_weights=cfg.backbone_weights, load_model_dir=cfg.load_model)
         model.compile(optimizer=SGD(learning_rate=cfg.learning_rate, momentum=0.9), loss=custom_loss, metrics=["accuracy", f1])
+
+
+    if cfg.local_weights is not None and os.path.exists(cfg.local_weights):
+        model.load_weights(cfg.local_weights)
+        print(f"Model loaded {cfg.local_weights}")
 
     if not os.path.isdir(cfg.save_dir):
         os.mkdir(cfg.save_dir)
@@ -118,5 +137,16 @@ if __name__ == "__main__":
 
     callbacks = [logger, reduce_lr, check_point, tensorboard, plottestimage]
 
-    model.fit(train_generator, steps_per_epoch=steps_per_epoch, epochs=cfg.epochs,
+
+    if cfg.validation_dir is not None:
+        model.fit(train_generator,
+                  steps_per_epoch=steps_per_epoch, 
+                  epochs=cfg.epochs,
+                  validation_data=validation_generator,
+                  use_multiprocessing=cfg.use_multiprocessing, 
+                  verbose=1,
+                  callbacks=callbacks, 
+                  shuffle=True)
+    else:
+        model.fit(train_generator, steps_per_epoch=steps_per_epoch, epochs=cfg.epochs,
                         use_multiprocessing=cfg.use_multiprocessing, verbose=1, callbacks=callbacks, shuffle=True)
