@@ -7,10 +7,27 @@ from model import cagnet_model
 from data_generator import ImageDataGenerator
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.optimizers import SGD
-from tensorflow.keras.callbacks import CSVLogger, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
+from tensorflow.keras.callbacks import CSVLogger, ReduceLROnPlateau, ModelCheckpoint, TensorBoard, EarlyStopping
 from tensorflow.keras import backend as K
 import tensorflow as tf
 from customcallback import PlotTestImages
+
+
+tf.get_logger().setLevel('ERROR')
+
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    # try:
+    # Currently, memory growth needs to be the same across GPUs
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
+        # tf.config.experimental.set_virtual_device_configuration(
+        #     gpu, [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=10*1024)])
+    logical_gpus = tf.config.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+    # except RuntimeError as e:
+    #     # Memory growth must be set before GPUs have been initialized
+    #     print(e)
 
 
 def args():
@@ -27,11 +44,12 @@ def args():
     parser.add_argument("--train_dir", type=str, default='./data/')
     parser.add_argument("--validation_dir", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default='./save/')
+    parser.add_argument("--save_model", type=str, default='./save_model/')
     parser.add_argument("--use_multiprocessing", type=bool, default=True)
     parser.add_argument("--local_weights", type=str, default=None)
     parser.add_argument("--load_model", type=str, default=None, help='If specified, before training, the model '
-                                                                     'weights will be loaded from this path otherwise '
-                                                                     ' the model will be trained from scratch.')
+                        'weights will be loaded from this path otherwise '
+                        ' the model will be trained from scratch.')
 
     return parser.parse_args()
 
@@ -67,22 +85,6 @@ def get_data_generator(data_dir, target_size, batch_size):
 
 
 if __name__ == "__main__":
-
-    tf.get_logger().setLevel('ERROR')
-
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        # try:
-        # Currently, memory growth needs to be the same across GPUs
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-            tf.config.experimental.set_virtual_device_configuration(
-                gpu, [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=10*1024)])
-        logical_gpus = tf.config.list_logical_devices('GPU')
-        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-        # except RuntimeError as e:
-        #     # Memory growth must be set before GPUs have been initialized
-        #     print(e)
 
     cfg = args()
 
@@ -123,10 +125,13 @@ if __name__ == "__main__":
 
     tensorboard = TensorBoard(os.path.join(cfg.save_dir, 'tensorboard'))
 
+    early = EarlyStopping(monitor='loss', min_delta=1e-4,
+                          patience=15, verbose=1, mode='auto')
+
     x_plot_test = os.path.join(
-        cfg.train_dir, "images/image/0a655354-f227-4a91-90b0-142036197d3d.jpg")
+        cfg.train_dir, "images/image/3cd5c659-2222-4513-9ead-8611839661ab.jpg")
     y_plot_test = os.path.join(
-        cfg.train_dir, "masks/mask/0a655354-f227-4a91-90b0-142036197d3d.png")
+        cfg.train_dir, "masks/mask/3cd5c659-2222-4513-9ead-8611839661ab.png")
 
     plottestimage = PlotTestImages(
         x_plot_test, y_plot_test, (480, 480), cfg.backbone_model, cfg.save_dir)
@@ -135,7 +140,8 @@ if __name__ == "__main__":
     # plottestimage.on_epoch_end(0)
     # sys.exit()
 
-    callbacks = [logger, reduce_lr, check_point, tensorboard, plottestimage]
+    callbacks = [logger, reduce_lr, check_point,
+                 tensorboard, plottestimage, early]
 
     if cfg.validation_dir is not None:
         model.fit(train_generator,
@@ -149,3 +155,9 @@ if __name__ == "__main__":
     else:
         model.fit(train_generator, steps_per_epoch=steps_per_epoch, epochs=cfg.epochs,
                   use_multiprocessing=cfg.use_multiprocessing, verbose=1, callbacks=callbacks, shuffle=True)
+
+    os.makedirs(cfg.save_model, exist_ok=True)
+    model_name = os.path.join(cfg.save_model, "cagnet_saoex")
+    model.save(model_name)
+    model.save_weights(os.path.join(
+        cfg.save_model, f"cagnet_{cfg.backbone_model}_saoex.hdf5"))

@@ -59,6 +59,7 @@ class PlotTestImages(Callback):
         outfile = os.path.join(plotimages, name)
 
         plt.savefig(outfile)
+        plt.close()
 
         # cv2.imwrite(os.path.join(plotimages, name) , predicted_map)
 
