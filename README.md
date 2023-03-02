@@ -25,6 +25,10 @@ python train.py --backbone_model 'ResNet50' --batch_size 10 --save_dir 'save'
 ```
 The backbone_model can be one of the following options: `VGG16`, `ResNet50`, `NASNetMobile` or `NASNetLarge` 
 
+```
+python train.py --train_dir /mnt/dados1/Projetos/DataSet/data/train --backbone_model 'ResNet50' --batch_size 10 --save_dir 'save' --local_weights ../saoex/src/saoex/model/cagnet_ResNet50_saoex.hdf5 --epochs 100
+```
+
 4- To generate saliency maps:
 ```
 python predict.py --model '/path/to/trained/model' --input_dir /path/to/input/images/directory --save_dir 'save'

@@ -106,6 +106,7 @@ if __name__ == "__main__":
     with strategy.scope():
         model = cagnet_model(cfg.backbone_model, cfg.input_shape,
                              backbone_weights=cfg.backbone_weights, load_model_dir=cfg.load_model)
+
         model.compile(optimizer=SGD(learning_rate=cfg.learning_rate,
                       momentum=0.9), loss=custom_loss, metrics=["accuracy", f1])
 
@@ -113,8 +114,7 @@ if __name__ == "__main__":
         model.load_weights(cfg.local_weights)
         print(f"Model loaded {cfg.local_weights}")
 
-    if not os.path.isdir(cfg.save_dir):
-        os.mkdir(cfg.save_dir)
+    os.makedirs(cfg.save_dir, exist_ok=True)
 
     logger = CSVLogger(os.path.join(cfg.save_dir, 'log.txt'), append=True)
     # If the training loss does not decrease for 10 epochs, the learning rate is divided by 10.
@@ -158,6 +158,10 @@ if __name__ == "__main__":
 
     os.makedirs(cfg.save_model, exist_ok=True)
     model_name = os.path.join(cfg.save_model, "cagnet_saoex")
-    model.save(model_name)
+    tf.keras.models.save_model(model, model_name,  overwrite=True,
+                               include_optimizer=True,
+                               save_format=None,
+                               signatures=None,
+                               options=None)
     model.save_weights(os.path.join(
         cfg.save_model, f"cagnet_{cfg.backbone_model}_saoex.hdf5"))
